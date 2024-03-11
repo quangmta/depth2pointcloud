@@ -72,14 +72,40 @@ namespace pointcloud_processing
 
     void PointCloudProcessingNode::PointCloudCallback(const sensor_msgs::msg::Image::SharedPtr depth_image)
     {
+        bool flag_return = 0;
+        if (nullptr == scan_msg_)
+        {
+            RCLCPP_INFO(get_logger(), "No laser scan, skipping point cloud processing"); 
+            flag_return = 1;           
+        }
+        if (nullptr == image_msg_)
+        {
+            RCLCPP_INFO(get_logger(), "No image, skipping point cloud processing");
+            flag_return = 1;
+        }
         if (nullptr == camera_info_msg_)
         {
-            RCLCPP_INFO(get_logger(), "No laser scan info, skipping point cloud processing");
+            RCLCPP_INFO(get_logger(), "No camera info, skipping point cloud processing");
+            flag_return = 1;
+        }
+
+        if (nullptr == depth_image)
+        {
+            RCLCPP_INFO(get_logger(), "No depth camera info, skipping point cloud processing");
+            flag_return = 1;
+        }
+
+        if (flag_return) return; 
+
+        if (image_msg_->height != depth_image->height || image_msg_->width != depth_image->width)
+        {
+            RCLCPP_INFO(get_logger(), "Difference size of image, skipping point cloud processing");
             return;
         }
 
         try
         {
+            RCLCPP_INFO(get_logger(), "Processing started!");
             auto original_pointcloud_msg_ = pointCloud_->create_pc(image_msg_, depth_image, camera_info_msg_);
             auto processed_scan_msg_ = pointCloud_->AlignLaserScan(scan_msg_);
             auto processed_depth_image_msg_ = pointCloud_->AlignDepthImage(depth_image,camera_info_msg_,processed_scan_msg_);
@@ -89,10 +115,11 @@ namespace pointcloud_processing
             scan_pub_->publish(*processed_scan_msg_);
             depth_image_pub_->publish(*processed_depth_image_msg_);
             processed_point_pub_->publish(*processed_pointcloud_msg_);
+            RCLCPP_INFO(get_logger(), "Processing completed!");
         }
         catch (const std::runtime_error &e)
         {
-            RCLCPP_ERROR(get_logger(), "Could not convert depth image to laserscan: %s", e.what());
+            RCLCPP_ERROR(get_logger(), "Could not convert depth image to point cloud: %s", e.what());
         }
     }
 }

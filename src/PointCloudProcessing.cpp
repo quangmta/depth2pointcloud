@@ -37,16 +37,16 @@ namespace pointcloud_processing
     {
         cam_model_.fromCameraInfo(cam_info_msg);
         cv::Mat rgb_image = cv_bridge::toCvShare(rgb_image_msg)->image;
-        cv::Mat depth_image = cv_bridge::toCvShare(depth_image_msg)->image;
+        // cv::Mat depth_image = cv_bridge::toCvShare(depth_image_msg)->image;
 
-        // cv::Mat depth_image(depth_image_msg->height, depth_image_msg->width, CV_32FC1, const_cast<uint16_t *>(reinterpret_cast<const uint16_t *>(&depth_image_msg->data[0])), depth_image_msg->step);
+        cv::Mat depth_image(depth_image_msg->height, depth_image_msg->width, CV_16UC1, const_cast<uint16_t *>(reinterpret_cast<const uint16_t *>(&depth_image_msg->data[0])), depth_image_msg->step);
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 
         for (int i = 0; i < depth_image.rows; ++i)
         {
             for (int j = 0; j < depth_image.cols; ++j)
             {
-                float d = depth_image.at<float>(i, j);
+                float d = static_cast<double>(depth_image.at<uint16_t>(i, j)) * 0.001;
 
                 // Check for invalid measurements
                 if (std::fabs(d) <= 1e-9)
@@ -62,8 +62,8 @@ namespace pointcloud_processing
                 pt.y = (i - cam_model_.cy()) * pt.z / cam_model_.fy();
 
                 cv::Vec3b rgb_pixel = rgb_image.at<cv::Vec3b>(i, j);
-                // std::uint32_t rgb = (rgb_pixel[2] << 16) | (rgb_pixel[1] << 8) | rgb_pixel[0];
-                pt.rgb = *reinterpret_cast<float *>(&rgb_pixel);
+                std::uint32_t rgb = (rgb_pixel[0] << 16) | (rgb_pixel[1] << 8) | rgb_pixel[2];
+                pt.rgb = *reinterpret_cast<float *>(&rgb);
 
                 // add p to the point cloud
                 pcl_cloud->points.push_back(pt);
@@ -159,35 +159,46 @@ namespace pointcloud_processing
     {
         cam_model_.fromCameraInfo(cam_info_msg);
         // float cam_fov_hor_ = 2 * std::atan(cam_model_.fullResolution().width / (2 * cam_model_.fx()));
-        cv::Mat depth_image = cv_bridge::toCvShare(depth_image_msg)->image;
+        // cv::Mat depth_image = cv_bridge::toCvShare(depth_image_msg)->image;
+        cv::Mat depth_image(depth_image_msg->height, depth_image_msg->width, CV_16UC1, const_cast<uint16_t *>(reinterpret_cast<const uint16_t *>(&depth_image_msg->data[0])), depth_image_msg->step);
         float coeff = 1, coeff_last = 1;
         std::ofstream csv_file("scan_data.csv");
-        csv_file<<scan_msg->ranges.size()<<std::endl;
+        csv_file << scan_msg->ranges.size() << "\t" << depth_image.cols << std::endl;
         for (int col = 0; col < depth_image.cols; col++)
         {
-            double d = (depth_image.at<float>(cam_model_.cy(), col));
-            int row_offset = cam_model_.cy() - tf_z_ * cam_model_.fy() / d;
-            d = depth_image.at<float>(row_offset, col);
+            double d = static_cast<double>(depth_image.at<uint16_t>(cam_model_.cy(), col)) * 0.001;
             long unsigned int indx = std::round(((scan_msg->ranges.size() - 1) * (depth_image.cols - col) / depth_image.cols));
-            float d_real=d;
+            float d_real = 0;
             float range = scan_msg->ranges[indx];
-            if (!std::isinf(range))
-            {                
-                d_real = range*std::cos(scan_msg->angle_min+indx*scan_msg->angle_increment)+tf_x_;
-                coeff = d_real / d;
-                coeff_last = coeff;
+            int row_offset = 0;
+            if (!std::isnan(range))
+            {
+                d_real = range * std::cos(scan_msg->angle_min + indx * scan_msg->angle_increment) + tf_x_;
+                row_offset = cam_model_.cy() - tf_z_ * cam_model_.fy() / d_real;
+                d = static_cast<double>(depth_image.at<uint16_t>(row_offset, col)) * 0.001;
+                if (d < 0.005 || d_real <= 0.005)
+                {
+                    coeff = coeff_last;
+                }
+                else
+                {
+                    coeff = d_real / d;
+                    coeff_last = coeff;
+                }
             }
             else
             {
                 coeff = coeff_last;
             }
-            csv_file << col << "\t" << indx << "\t" << range << "\t" << d_real << "\t" << d << "\t" << coeff << std::endl;
+            csv_file << col << "\t" << indx << "\t" << range << "\t" << row_offset << "\t" << d_real << "\t" << d << "\t" << coeff;
 
             for (int row = 0; row < depth_image.rows; row++)
             {
-                depth_image.at<float>(row, col) *= coeff;
+                depth_image.at<uint16_t>(row, col) *= coeff;
             }
+            csv_file << std::endl;
         }
+        csv_file << "end";
         csv_file.close();
 
         auto depth_image_msg_copy = std::make_shared<sensor_msgs::msg::Image>(*depth_image_msg);
