@@ -149,7 +149,7 @@ namespace pointcloud_processing
         align_scan_msg->range_max = scan_msg->range_max;
 
         align_scan_msg->ranges.assign(scan_msg->ranges.begin() + begin_point_scan_index,
-                                      scan_msg->ranges.begin() + end_point_scan_index);
+                                      scan_msg->ranges.begin() + end_point_scan_index + 1);
         return align_scan_msg;
     }
 
