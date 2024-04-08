@@ -2,6 +2,7 @@
 
 #include <rcutils/logging_macros.h>
 #include <rclcpp_components/register_node_macro.hpp>
+#include <cmath>
 
 namespace pointcloud_processing
 {
@@ -31,9 +32,12 @@ namespace pointcloud_processing
         point_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/original_points", qos);
         processed_point_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/processed_points", qos);
         depth_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/processed_depth_image", qos);
+        depth_image_original_sync_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/original_sync_depth_image", qos);
+        rgb_image_original_sync_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/original_sync_rgb_image", qos);
+        scan_from_depth_pub_ = this->create_publisher<sensor_msgs::msg::LaserScan>("/scan_from_depth", qos);
 
         float tf_x, tf_y, tf_z, tf_roll, tf_pitch, tf_yaw;
-        //int cam_width, cam_height;
+        // int cam_width, cam_height;
         this->declare_parameter("tf_x", -0.04);
         this->declare_parameter("tf_y", 0.0);
         this->declare_parameter("tf_z", 0.02);
@@ -75,8 +79,8 @@ namespace pointcloud_processing
         bool flag_return = 0;
         if (nullptr == scan_msg_)
         {
-            RCLCPP_INFO(get_logger(), "No laser scan, skipping point cloud processing"); 
-            flag_return = 1;           
+            RCLCPP_INFO(get_logger(), "No laser scan, skipping point cloud processing");
+            flag_return = 1;
         }
         if (nullptr == image_msg_)
         {
@@ -95,7 +99,8 @@ namespace pointcloud_processing
             flag_return = 1;
         }
 
-        if (flag_return) return; 
+        if (flag_return)
+            return;
 
         if (image_msg_->height != depth_image->height || image_msg_->width != depth_image->width)
         {
@@ -103,17 +108,37 @@ namespace pointcloud_processing
             return;
         }
 
+        depth_image_original_sync_pub_->publish(*depth_image);
+        rgb_image_original_sync_pub_->publish(*image_msg_);
+
         try
         {
+            // Fill in laserscan message
+            sensor_msgs::msg::LaserScan::UniquePtr scan_from_depth_msg = std::make_unique<sensor_msgs::msg::LaserScan>();
+            scan_from_depth_msg->header = depth_image->header;
+            scan_from_depth_msg->header.frame_id = "camera_color_frame";
+            float cam_fov_hor_half_ = std::atan(camera_info_msg_->width / (2 * camera_info_msg_->k[0]));
+            scan_from_depth_msg->angle_min = -cam_fov_hor_half_;
+            scan_from_depth_msg->angle_max = +cam_fov_hor_half_;
+            scan_from_depth_msg->angle_increment = (scan_from_depth_msg->angle_max - scan_from_depth_msg->angle_min) / (depth_image->width - 1);
+            scan_from_depth_msg->time_increment = 0.0;
+            scan_from_depth_msg->scan_time = scan_msg_->scan_time;
+            scan_from_depth_msg->range_min = 0.0;
+            scan_from_depth_msg->range_max = 10.0;
+            scan_from_depth_msg->ranges.assign(depth_image->width, std::numeric_limits<float>::quiet_NaN());
+
             // RCLCPP_INFO(get_logger(), "Processing started!");
             auto original_pointcloud_msg_ = pointCloud_->create_pc(image_msg_, depth_image, camera_info_msg_);
             auto processed_scan_msg_ = pointCloud_->AlignLaserScan(scan_msg_);
-            auto processed_depth_image_msg_ = pointCloud_->AlignDepthImage(depth_image,camera_info_msg_,processed_scan_msg_);
-            auto processed_pointcloud_msg_ = pointCloud_->create_pc(image_msg_,processed_depth_image_msg_,camera_info_msg_);
-            
+            auto processed_depth_image_msg_ = pointCloud_->SimpleAlignDepthImage(depth_image, camera_info_msg_, processed_scan_msg_, scan_from_depth_msg);
+            auto processed_pointcloud_msg_ = pointCloud_->create_pc(image_msg_, processed_depth_image_msg_, camera_info_msg_);
+
+            image_msg_->header.stamp = depth_image->header.stamp;
+
             point_pub_->publish(*original_pointcloud_msg_);
             scan_pub_->publish(*processed_scan_msg_);
-            depth_image_pub_->publish(*processed_depth_image_msg_);
+            depth_image_pub_->publish(*processed_depth_image_msg_);            
+            scan_from_depth_pub_->publish(*scan_from_depth_msg);
             processed_point_pub_->publish(*processed_pointcloud_msg_);
             RCLCPP_INFO(get_logger(), "Processing completed!");
         }

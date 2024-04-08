@@ -25,6 +25,7 @@ find_package(pcl_ros REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(image_geometry REQUIRED)
 find_package(cv_bridge REQUIRED)
+find_package(Eigen3 REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -39,6 +40,7 @@ ament_target_dependencies(PointCloudProcessing
   OpenCV
   image_geometry
   cv_bridge
+  Eigen3
 )
 target_include_directories(PointCloudProcessing PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"
