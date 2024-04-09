@@ -249,16 +249,16 @@ namespace pointcloud_processing
 
         if (begin_point_scan_index > 0)
         {
-            float coorY_l = scan_msg->ranges[end_point_scan_index] * std::sin(cam_angle_max_l);
-            float coorY_r = scan_msg->ranges[begin_point_scan_index] * std::sin(cam_angle_max_r);
+            float coorY_l = scan_msg->ranges[end_point_scan_index] * std::sin(cam_angle_max_l-tf_yaw_);
+            float coorY_r = scan_msg->ranges[begin_point_scan_index] * std::sin(cam_angle_max_r-tf_yaw_);
             if (tf_y_ < 0)
             {
-                while (std::fabs(tf_y_) - eps > scan_msg->ranges[begin_point_scan_index] * std::sin(cam_angle_max_r) - coorY_r)
+                while (std::fabs(tf_y_) - eps > scan_msg->ranges[begin_point_scan_index] * std::sin(cam_angle_max_r-tf_yaw_) - coorY_r)
                 {
                     begin_point_scan_index--;
                     cam_angle_max_r += scan_msg->angle_increment;
                 }
-                while (std::fabs(tf_y_) - eps > coorY_l - scan_msg->ranges[end_point_scan_index] * std::sin(cam_angle_max_l))
+                while (std::fabs(tf_y_) - eps > coorY_l - scan_msg->ranges[end_point_scan_index] * std::sin(cam_angle_max_l-tf_yaw_))
                 {
                     end_point_scan_index--;
                     cam_angle_max_l -= scan_msg->angle_increment;
@@ -266,12 +266,12 @@ namespace pointcloud_processing
             }
             else
             {
-                while (std::fabs(tf_y_) - eps > coorY_r - scan_msg->ranges[begin_point_scan_index] * std::sin(cam_angle_max_r))
+                while (std::fabs(tf_y_) - eps > coorY_r - scan_msg->ranges[begin_point_scan_index] * std::sin(cam_angle_max_r-tf_yaw_))
                 {
                     begin_point_scan_index++;
                     cam_angle_max_r -= scan_msg->angle_increment;
                 }
-                while (std::fabs(tf_y_) - eps > scan_msg->ranges[end_point_scan_index] * std::sin(cam_angle_max_l) - coorY_l)
+                while (std::fabs(tf_y_) - eps > scan_msg->ranges[end_point_scan_index] * std::sin(cam_angle_max_l-tf_yaw_) - coorY_l)
                 {
                     end_point_scan_index++;
                     cam_angle_max_l += scan_msg->angle_increment;
@@ -346,8 +346,8 @@ namespace pointcloud_processing
             if (!std::isnan(range))
             {
                 float angle = scan_msg->angle_min + indx * scan_msg->angle_increment - tf_yaw_;
-                float d_real = range * std::cos(angle) - tf_x_;
-                int row_offset = cam_model_.cy() + (tf_z_ + d_real * std::tan(tf_pitch_)) * cam_model_.fy() / d_real;
+                float d_real = range * std::cos(angle) + tf_x_;
+                int row_offset = cam_model_.cy() - (tf_z_ - d_real * std::tan(tf_pitch_)) * cam_model_.fy() / d_real;
                 if (row_offset >= 0 && row_offset < depth_image.rows)
                 {
                     int index_col = cam_model_.cx() - cam_model_.cx() / std::tan(cam_angle_max_l) * std::tan(angle);
@@ -475,7 +475,7 @@ namespace pointcloud_processing
 
     //         if (!std::isnan(range))
     //         {
-    //             d_real = range * std::cos(scan_msg->angle_min + indx * scan_msg->angle_increment) - tf_x_;
+    //             d_real = range * std::cos(scan_msg->angle_min + indx * scan_msg->angle_increment) + tf_x_;
     //             row_offset = cam_model_.cy() + tf_z_ * cam_model_.fy() / d_real;
     //             if (row_offset >= 0 && row_offset < depth_image.rows)
     //             {
@@ -573,7 +573,7 @@ namespace pointcloud_processing
 
     //         if (!std::isnan(range))
     //         {
-    //             d_real = range * std::cos(scan_msg->angle_min + indx * scan_msg->angle_increment) - tf_x_;
+    //             d_real = range * std::cos(scan_msg->angle_min + indx * scan_msg->angle_increment) + tf_x_;
     //             row_offset = cam_model_.cy() + tf_z_ * cam_model_.fy() / d_real;
     //             if (row_offset >= 0 && row_offset < depth_image.rows)
     //             {
