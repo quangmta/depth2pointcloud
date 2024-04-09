@@ -233,6 +233,9 @@ namespace pointcloud_processing
         double cam_angle_max_l = angle_between_rays(left_ray, center_ray);
         double cam_angle_max_r = angle_between_rays(center_ray, right_ray);
 
+        cam_angle_max_l+=tf_yaw_;
+        cam_angle_max_r+=tf_yaw_;
+
         int step_l = cam_angle_max_l / scan_msg->angle_increment;
         int step_r = cam_angle_max_r / scan_msg->angle_increment;
         cam_angle_max_l = step_l * scan_msg->angle_increment;
@@ -297,99 +300,6 @@ namespace pointcloud_processing
         return align_scan_msg;
     }
 
-    sensor_msgs::msg::Image::SharedPtr PointCloudProcessing::AlignDepthImage(const sensor_msgs::msg::Image::ConstSharedPtr &depth_image_msg,
-                                                                             const sensor_msgs::msg::CameraInfo::ConstSharedPtr &cam_info_msg,
-                                                                             const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg,
-                                                                             const sensor_msgs::msg::LaserScan::UniquePtr &scan_from_depth_msg)
-    {
-        cam_model_.fromCameraInfo(cam_info_msg);
-        // float cam_fov_hor_ = 2 * std::atan(cam_model_.fullResolution().width / (2 * cam_model_.fx()));
-        // cv::Mat depth_image = cv_bridge::toCvShare(depth_image_msg)->image;
-        cv::Mat depth_image;
-        if (depth_image_msg->encoding == "32FC1")
-            depth_image = cv::Mat(depth_image_msg->height, depth_image_msg->width, CV_32FC1, const_cast<float *>(reinterpret_cast<const float *>(&depth_image_msg->data[0])), depth_image_msg->step);
-        else if (depth_image_msg->encoding == "16UC1")
-            depth_image = cv::Mat(depth_image_msg->height, depth_image_msg->width, CV_16UC1, const_cast<uint16_t *>(reinterpret_cast<const uint16_t *>(&depth_image_msg->data[0])), depth_image_msg->step);
-        float coeff = 1, coeff_last = 1;
-        std::ofstream csv_file("scan_data.csv");
-        csv_file << scan_msg->ranges.size() << "\t" << depth_image.cols << std::endl;
-        for (int col = 0; col < depth_image.cols; col++)
-        {
-            double d;
-            if (depth_image_msg->encoding == "32FC1")
-                d = static_cast<double>(depth_image.at<float>(cam_model_.cy(), col));
-            else if (depth_image_msg->encoding == "16UC1")
-                d = static_cast<double>(depth_image.at<uint16_t>(cam_model_.cy(), col)) * 0.001;
-            long unsigned int indx = std::round(((scan_msg->ranges.size() - 1) * (depth_image.cols - col) / depth_image.cols));
-            float d_real = 0;
-            float range = scan_msg->ranges[indx];
-
-            int row_offset;
-            row_offset = cam_model_.cy() - tf_z_ * cam_model_.fy() / d;
-            if (row_offset >= 0 && row_offset < depth_image.rows)
-            {
-                if (depth_image_msg->encoding == "32FC1")
-                    d = static_cast<double>(depth_image.at<float>(row_offset, col));
-                else if (depth_image_msg->encoding == "16UC1")
-                    d = static_cast<double>(depth_image.at<uint16_t>(row_offset, col)) * 0.001;
-
-                // Determine if this point should be used.
-                if (use_point(d, scan_msg->ranges[depth_image.cols - col], scan_msg->range_min, scan_msg->range_max))
-                {
-                    scan_from_depth_msg->ranges[depth_image.cols - col] = d;
-                }
-            }
-
-            if (!std::isnan(range))
-            {
-                d_real = range * std::cos(scan_msg->angle_min + indx * scan_msg->angle_increment) + tf_x_;
-                row_offset = cam_model_.cy() - tf_z_ * cam_model_.fy() / d_real;
-                if (row_offset >= 0 && row_offset < depth_image.rows)
-                {
-                    if (depth_image_msg->encoding == "32FC1")
-                        d = static_cast<double>(depth_image.at<float>(row_offset, col));
-                    else if (depth_image_msg->encoding == "16UC1")
-                        d = static_cast<double>(depth_image.at<uint16_t>(row_offset, col)) * 0.001;
-
-                    // Determine if this point should be used.
-                    if (use_point(d, scan_msg->ranges[depth_image.cols - col], scan_msg->range_min, scan_msg->range_max))
-                    {
-                        scan_from_depth_msg->ranges[depth_image.cols - col] = d;
-                    }
-                    if (d < 0.005 || d_real <= 0.005)
-                    {
-                        coeff = coeff_last;
-                    }
-                    else
-                    {
-                        coeff = d_real / d;
-                        coeff_last = coeff;
-                    }
-                }
-            }
-            else
-            {
-                coeff = coeff_last;
-            }
-            csv_file << col << "\t" << indx << "\t" << range << "\t" << row_offset << "\t" << d_real << "\t" << d << "\t" << coeff;
-
-            for (int row = 0; row < depth_image.rows; row++)
-            {
-                if (depth_image_msg->encoding == "32FC1")
-                    depth_image.at<float>(row, col) *= coeff;
-                else if (depth_image_msg->encoding == "16UC1")
-                    depth_image.at<uint16_t>(row, col) *= coeff;
-            }
-            csv_file << std::endl;
-        }
-        csv_file << "end";
-        csv_file.close();
-
-        auto depth_image_msg_copy = std::make_shared<sensor_msgs::msg::Image>(*depth_image_msg);
-        memcpy(depth_image_msg_copy->data.data(), depth_image.data, depth_image_msg->data.size());
-        return depth_image_msg_copy;
-    }
-
     sensor_msgs::msg::Image::SharedPtr PointCloudProcessing::SimpleAlignDepthImage(const sensor_msgs::msg::Image::ConstSharedPtr &depth_image_msg,
                                                                                    const sensor_msgs::msg::CameraInfo::ConstSharedPtr &cam_info_msg,
                                                                                    const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg,
@@ -408,16 +318,21 @@ namespace pointcloud_processing
         cv::Point2d rect_pixel_left = cam_model_.rectifyPoint(raw_pixel_left);
         cv::Point3d left_ray = cam_model_.projectPixelTo3dRay(rect_pixel_left);
 
-        // cv::Point2d raw_pixel_right(cam_model_.fullResolution().width - 1, cam_model_.cy());
-        // cv::Point2d rect_pixel_right = cam_model_.rectifyPoint(raw_pixel_right);
-        // cv::Point3d right_ray = cam_model_.projectPixelTo3dRay(rect_pixel_right);
+        cv::Point2d raw_pixel_right(cam_model_.fullResolution().width - 1, cam_model_.cy());
+        cv::Point2d rect_pixel_right = cam_model_.rectifyPoint(raw_pixel_right);
+        cv::Point3d right_ray = cam_model_.projectPixelTo3dRay(rect_pixel_right);
 
         cv::Point2d raw_pixel_center(cam_model_.cx(), cam_model_.cy());
         cv::Point2d rect_pixel_center = cam_model_.rectifyPoint(raw_pixel_center);
         cv::Point3d center_ray = cam_model_.projectPixelTo3dRay(rect_pixel_center);
 
         double cam_angle_max_l = angle_between_rays(left_ray, center_ray);
-        // double cam_angle_max_r = angle_between_rays(center_ray, right_ray);
+        double cam_angle_max_r = angle_between_rays(center_ray, right_ray);
+
+        scan_from_depth_msg->angle_min = -cam_angle_max_r;
+        scan_from_depth_msg->angle_max = cam_angle_max_l;
+        scan_from_depth_msg->angle_increment = (scan_from_depth_msg->angle_max - scan_from_depth_msg->angle_min) / (depth_image.cols - 1);
+        scan_from_depth_msg->ranges.assign(depth_image.cols, std::numeric_limits<float>::quiet_NaN());
 
         double sum_num = 0, sum_den = 0;
         std::vector<double> x, y;
@@ -430,9 +345,9 @@ namespace pointcloud_processing
             float range = scan_msg->ranges[indx];
             if (!std::isnan(range))
             {
-                float angle = scan_msg->angle_min + indx * scan_msg->angle_increment;
-                float d_real = range * std::cos(angle) + tf_x_;
-                int row_offset = cam_model_.cy() - tf_z_ * cam_model_.fy() / d_real;
+                float angle = scan_msg->angle_min + indx * scan_msg->angle_increment - tf_yaw_;
+                float d_real = range * std::cos(angle) - tf_x_;
+                int row_offset = cam_model_.cy() + (tf_z_ + d_real * std::tan(tf_pitch_)) * cam_model_.fy() / d_real;
                 if (row_offset >= 0 && row_offset < depth_image.rows)
                 {
                     int index_col = cam_model_.cx() - cam_model_.cx() / std::tan(cam_angle_max_l) * std::tan(angle);
@@ -442,7 +357,9 @@ namespace pointcloud_processing
                     else if (depth_image_msg->encoding == "16UC1")
                         d = static_cast<double>(depth_image.at<uint16_t>(row_offset, index_col)) * 0.001;
 
-                    scan_from_depth_msg->ranges[depth_image.cols - index_col] = d / std::cos(scan_msg->angle_min + index_col * scan_msg->angle_increment);
+                    float x_distance = (index_col - cam_model_.cx()) * d / cam_model_.fx();
+
+                    scan_from_depth_msg->ranges[depth_image.cols - index_col] = std::sqrt(std::pow(d, 2.0) + std::pow(x_distance, 2.0));
 
                     // Determine if this point should be used.
                     // if (use_point(d, scan_msg->ranges[depth_image.cols - col], scan_msg->range_min, scan_msg->range_max))
@@ -513,6 +430,99 @@ namespace pointcloud_processing
         return depth_image_msg_copy;
     }
 
+    // sensor_msgs::msg::Image::SharedPtr PointCloudProcessing::AlignDepthImage(const sensor_msgs::msg::Image::ConstSharedPtr &depth_image_msg,
+    //                                                                          const sensor_msgs::msg::CameraInfo::ConstSharedPtr &cam_info_msg,
+    //                                                                          const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg,
+    //                                                                          const sensor_msgs::msg::LaserScan::UniquePtr &scan_from_depth_msg)
+    // {
+    //     cam_model_.fromCameraInfo(cam_info_msg);
+    //     // float cam_fov_hor_ = 2 * std::atan(cam_model_.fullResolution().width / (2 * cam_model_.fx()));
+    //     // cv::Mat depth_image = cv_bridge::toCvShare(depth_image_msg)->image;
+    //     cv::Mat depth_image;
+    //     if (depth_image_msg->encoding == "32FC1")
+    //         depth_image = cv::Mat(depth_image_msg->height, depth_image_msg->width, CV_32FC1, const_cast<float *>(reinterpret_cast<const float *>(&depth_image_msg->data[0])), depth_image_msg->step);
+    //     else if (depth_image_msg->encoding == "16UC1")
+    //         depth_image = cv::Mat(depth_image_msg->height, depth_image_msg->width, CV_16UC1, const_cast<uint16_t *>(reinterpret_cast<const uint16_t *>(&depth_image_msg->data[0])), depth_image_msg->step);
+    //     float coeff = 1, coeff_last = 1;
+    //     std::ofstream csv_file("scan_data.csv");
+    //     csv_file << scan_msg->ranges.size() << "\t" << depth_image.cols << std::endl;
+    //     for (int col = 0; col < depth_image.cols; col++)
+    //     {
+    //         double d;
+    //         if (depth_image_msg->encoding == "32FC1")
+    //             d = static_cast<double>(depth_image.at<float>(cam_model_.cy(), col));
+    //         else if (depth_image_msg->encoding == "16UC1")
+    //             d = static_cast<double>(depth_image.at<uint16_t>(cam_model_.cy(), col)) * 0.001;
+    //         long unsigned int indx = std::round(((scan_msg->ranges.size() - 1) * (depth_image.cols - col) / depth_image.cols));
+    //         float d_real = 0;
+    //         float range = scan_msg->ranges[indx];
+
+    //         int row_offset;
+    //         row_offset = cam_model_.cy() + tf_z_ * cam_model_.fy() / d;
+    //         if (row_offset >= 0 && row_offset < depth_image.rows)
+    //         {
+    //             if (depth_image_msg->encoding == "32FC1")
+    //                 d = static_cast<double>(depth_image.at<float>(row_offset, col));
+    //             else if (depth_image_msg->encoding == "16UC1")
+    //                 d = static_cast<double>(depth_image.at<uint16_t>(row_offset, col)) * 0.001;
+
+    //             // Determine if this point should be used.
+    //             if (use_point(d, scan_msg->ranges[depth_image.cols - col], scan_msg->range_min, scan_msg->range_max))
+    //             {
+    //                 scan_from_depth_msg->ranges[depth_image.cols - col] = d;
+    //             }
+    //         }
+
+    //         if (!std::isnan(range))
+    //         {
+    //             d_real = range * std::cos(scan_msg->angle_min + indx * scan_msg->angle_increment) - tf_x_;
+    //             row_offset = cam_model_.cy() + tf_z_ * cam_model_.fy() / d_real;
+    //             if (row_offset >= 0 && row_offset < depth_image.rows)
+    //             {
+    //                 if (depth_image_msg->encoding == "32FC1")
+    //                     d = static_cast<double>(depth_image.at<float>(row_offset, col));
+    //                 else if (depth_image_msg->encoding == "16UC1")
+    //                     d = static_cast<double>(depth_image.at<uint16_t>(row_offset, col)) * 0.001;
+
+    //                 // Determine if this point should be used.
+    //                 if (use_point(d, scan_msg->ranges[depth_image.cols - col], scan_msg->range_min, scan_msg->range_max))
+    //                 {
+    //                     scan_from_depth_msg->ranges[depth_image.cols - col] = d;
+    //                 }
+    //                 if (d < 0.005 || d_real <= 0.005)
+    //                 {
+    //                     coeff = coeff_last;
+    //                 }
+    //                 else
+    //                 {
+    //                     coeff = d_real / d;
+    //                     coeff_last = coeff;
+    //                 }
+    //             }
+    //         }
+    //         else
+    //         {
+    //             coeff = coeff_last;
+    //         }
+    //         csv_file << col << "\t" << indx << "\t" << range << "\t" << row_offset << "\t" << d_real << "\t" << d << "\t" << coeff;
+
+    //         for (int row = 0; row < depth_image.rows; row++)
+    //         {
+    //             if (depth_image_msg->encoding == "32FC1")
+    //                 depth_image.at<float>(row, col) *= coeff;
+    //             else if (depth_image_msg->encoding == "16UC1")
+    //                 depth_image.at<uint16_t>(row, col) *= coeff;
+    //         }
+    //         csv_file << std::endl;
+    //     }
+    //     csv_file << "end";
+    //     csv_file.close();
+
+    //     auto depth_image_msg_copy = std::make_shared<sensor_msgs::msg::Image>(*depth_image_msg);
+    //     memcpy(depth_image_msg_copy->data.data(), depth_image.data, depth_image_msg->data.size());
+    //     return depth_image_msg_copy;
+    // }
+
     // sensor_msgs::msg::Image::SharedPtr PointCloudProcessing::SimpleAlignDepthImage(const sensor_msgs::msg::Image::ConstSharedPtr &depth_image_msg,
     //                                                                                const sensor_msgs::msg::CameraInfo::ConstSharedPtr &cam_info_msg,
     //                                                                                const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg,
@@ -545,7 +555,7 @@ namespace pointcloud_processing
     //         float range = scan_msg->ranges[indx];
 
     //         int row_offset;
-    //         row_offset = cam_model_.cy() - tf_z_ * cam_model_.fy() / d;
+    //         row_offset = cam_model_.cy() + tf_z_ * cam_model_.fy() / d;
     //         if (row_offset >= 0 && row_offset < depth_image.rows)
     //         {
     //             if (depth_image_msg->encoding == "32FC1")
@@ -563,8 +573,8 @@ namespace pointcloud_processing
 
     //         if (!std::isnan(range))
     //         {
-    //             d_real = range * std::cos(scan_msg->angle_min + indx * scan_msg->angle_increment) + tf_x_;
-    //             row_offset = cam_model_.cy() - tf_z_ * cam_model_.fy() / d_real;
+    //             d_real = range * std::cos(scan_msg->angle_min + indx * scan_msg->angle_increment) - tf_x_;
+    //             row_offset = cam_model_.cy() + tf_z_ * cam_model_.fy() / d_real;
     //             if (row_offset >= 0 && row_offset < depth_image.rows)
     //             {
     //                 if (depth_image_msg->encoding == "32FC1")

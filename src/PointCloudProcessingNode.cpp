@@ -36,21 +36,21 @@ namespace pointcloud_processing
         rgb_image_original_sync_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/original_sync_rgb_image", qos);
         scan_from_depth_pub_ = this->create_publisher<sensor_msgs::msg::LaserScan>("/scan_from_depth", qos);
 
-        float tf_x, tf_y, tf_z, tf_roll, tf_pitch, tf_yaw;
+        // float tf_x, tf_y, tf_z, tf_roll, tf_pitch, tf_yaw;
         // int cam_width, cam_height;
-        this->declare_parameter("tf_x", -0.04);
+        this->declare_parameter("tf_x", 0.0);
         this->declare_parameter("tf_y", 0.0);
-        this->declare_parameter("tf_z", 0.02);
+        this->declare_parameter("tf_z", 0.0);
         this->declare_parameter("tf_roll", 0.0);
         this->declare_parameter("tf_pitch", 0.0);
         this->declare_parameter("tf_yaw", 0.0);
 
-        this->get_parameter("tf_x", tf_x);
-        this->get_parameter("tf_y", tf_y);
-        this->get_parameter("tf_z", tf_z);
-        this->get_parameter("tf_roll", tf_roll);
-        this->get_parameter("tf_pitch", tf_pitch);
-        this->get_parameter("tf_yaw", tf_yaw);
+        auto tf_x = this->get_parameter("tf_x").as_double();
+        auto tf_y = this->get_parameter("tf_y").as_double();
+        auto tf_z = this->get_parameter("tf_z").as_double();
+        auto tf_roll = this->get_parameter("tf_roll").as_double();
+        auto tf_pitch = this->get_parameter("tf_pitch").as_double();
+        auto tf_yaw =  this->get_parameter("tf_yaw").as_double();
 
         std::string output_frame = this->declare_parameter("output_frame", "/processed_points");
 
@@ -117,15 +117,14 @@ namespace pointcloud_processing
             sensor_msgs::msg::LaserScan::UniquePtr scan_from_depth_msg = std::make_unique<sensor_msgs::msg::LaserScan>();
             scan_from_depth_msg->header = depth_image->header;
             scan_from_depth_msg->header.frame_id = "camera_color_frame";
-            float cam_fov_hor_half_ = std::atan(camera_info_msg_->width / (2 * camera_info_msg_->k[0]));
-            scan_from_depth_msg->angle_min = -cam_fov_hor_half_;
-            scan_from_depth_msg->angle_max = +cam_fov_hor_half_;
-            scan_from_depth_msg->angle_increment = (scan_from_depth_msg->angle_max - scan_from_depth_msg->angle_min) / (depth_image->width - 1);
+            // float cam_fov_hor_half_ = std::atan(camera_info_msg_->width / (2 * camera_info_msg_->k[0]));
+            // scan_from_depth_msg->angle_min = -cam_fov_hor_half_;
+            // scan_from_depth_msg->angle_max = +cam_fov_hor_half_;
+            // scan_from_depth_msg->angle_increment = (scan_from_depth_msg->angle_max - scan_from_depth_msg->angle_min) / (depth_image->width - 1);
             scan_from_depth_msg->time_increment = 0.0;
             scan_from_depth_msg->scan_time = scan_msg_->scan_time;
-            scan_from_depth_msg->range_min = 0.0;
-            scan_from_depth_msg->range_max = 10.0;
-            scan_from_depth_msg->ranges.assign(depth_image->width, std::numeric_limits<float>::quiet_NaN());
+            scan_from_depth_msg->range_min = 0.1;
+            scan_from_depth_msg->range_max = 5.6;            
 
             // RCLCPP_INFO(get_logger(), "Processing started!");
             auto original_pointcloud_msg_ = pointCloud_->create_pc(image_msg_, depth_image, camera_info_msg_);

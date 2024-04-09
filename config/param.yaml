@@ -1,12 +1,11 @@
-pointcloud_processing:
+pointcloud_processing_node:
   ros__parameters:
-    # depth_type: 32FC1
-    tf_x: -0.052
+    tf_x: 0.052
     tf_y: 0.0
-    tf_z: 0.025
+    tf_z: -0.025
     tf_roll: 0.0
-    tf_pitch: 0.0
-    tf_yaw: 0.0
+    tf_pitch: 0.03844
+    tf_yaw: -0.06579
     # tf_x: 0.042
     # tf_y: 0.0
     # tf_z: -0.045

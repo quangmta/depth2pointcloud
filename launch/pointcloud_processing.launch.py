@@ -19,6 +19,7 @@ def generate_launch_description():
                         ('/depth','/estimated_depth'),
                         ('/camera_info', '/camera/color/camera_info'),
                         ('/laser', '/scan')],
+                        
             parameters=[param_config]           
         )
     ])
