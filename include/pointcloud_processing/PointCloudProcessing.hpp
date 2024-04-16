@@ -34,16 +34,17 @@ namespace pointcloud_processing
                                                              const sensor_msgs::msg::CameraInfo::ConstSharedPtr &cam_info_msg,
                                                              const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg,
                                                              const sensor_msgs::msg::LaserScan::UniquePtr &scan_from_depth_msg);
-    sensor_msgs::msg::LaserScan::SharedPtr AlignLaserScan(const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg);
+    sensor_msgs::msg::LaserScan::SharedPtr AlignLaserScan(const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg,
+                                                          const sensor_msgs::msg::CameraInfo::ConstSharedPtr &cam_info_msg);
 
   private:
     double angle_between_rays(const cv::Point3d &ray1, const cv::Point3d &ray2) const;
     bool use_point(const float new_value, const float old_value, const float range_min, const float range_max) const;
-    double magnitude_of_ray(const cv::Point3d& ray) const;
+    double magnitude_of_ray(const cv::Point3d &ray) const;
     std::vector<double> FitPolynomial(const std::vector<double> &x,
                                       const std::vector<double> &y, int degree);
     double EvalPolynomial(const std::vector<double> &coeffs, double x);
-    uint16_t EvalPolynomial(const std::vector<double> &coeffs, uint16_t x);    
+    uint16_t EvalPolynomial(const std::vector<double> &coeffs, uint16_t x);
     image_geometry::PinholeCameraModel cam_model_;
     float tf_x_;
     float tf_y_;

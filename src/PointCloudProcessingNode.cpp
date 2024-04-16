@@ -128,7 +128,7 @@ namespace pointcloud_processing
 
             // RCLCPP_INFO(get_logger(), "Processing started!");
             auto original_pointcloud_msg_ = pointCloud_->create_pc(image_msg_, depth_image, camera_info_msg_);
-            auto processed_scan_msg_ = pointCloud_->AlignLaserScan(scan_msg_);
+            auto processed_scan_msg_ = pointCloud_->AlignLaserScan(scan_msg_,camera_info_msg_);
             auto processed_depth_image_msg_ = pointCloud_->SimpleAlignDepthImage(depth_image, camera_info_msg_, processed_scan_msg_, scan_from_depth_msg);
             auto processed_pointcloud_msg_ = pointCloud_->create_pc(image_msg_, processed_depth_image_msg_, camera_info_msg_);
 

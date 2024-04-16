@@ -215,8 +215,10 @@ namespace pointcloud_processing
         return pointcloud_msg;
     }
 
-    sensor_msgs::msg::LaserScan::SharedPtr PointCloudProcessing::AlignLaserScan(const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg)
+    sensor_msgs::msg::LaserScan::SharedPtr PointCloudProcessing::AlignLaserScan(const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg,
+                                                                                const sensor_msgs::msg::CameraInfo::ConstSharedPtr &cam_info_msg)
     {
+        cam_model_.fromCameraInfo(cam_info_msg);
         // Calculate angle_min and angle_max by measuring angles between the left ray, right ray, and optical center ray
         cv::Point2d raw_pixel_left(0, cam_model_.cy());
         cv::Point2d rect_pixel_left = cam_model_.rectifyPoint(raw_pixel_left);
@@ -233,8 +235,8 @@ namespace pointcloud_processing
         double cam_angle_max_l = angle_between_rays(left_ray, center_ray);
         double cam_angle_max_r = angle_between_rays(center_ray, right_ray);
 
-        cam_angle_max_l+=tf_yaw_;
-        cam_angle_max_r+=tf_yaw_;
+        cam_angle_max_l += tf_yaw_;
+        cam_angle_max_r -= tf_yaw_;
 
         int step_l = cam_angle_max_l / scan_msg->angle_increment;
         int step_r = cam_angle_max_r / scan_msg->angle_increment;
@@ -249,16 +251,16 @@ namespace pointcloud_processing
 
         if (begin_point_scan_index > 0)
         {
-            float coorY_l = scan_msg->ranges[end_point_scan_index] * std::sin(cam_angle_max_l-tf_yaw_);
-            float coorY_r = scan_msg->ranges[begin_point_scan_index] * std::sin(cam_angle_max_r-tf_yaw_);
+            float coorY_l = scan_msg->ranges[end_point_scan_index] * std::sin(cam_angle_max_l - tf_yaw_);
+            float coorY_r = scan_msg->ranges[begin_point_scan_index] * std::sin(cam_angle_max_r - tf_yaw_);
             if (tf_y_ < 0)
             {
-                while (std::fabs(tf_y_) - eps > scan_msg->ranges[begin_point_scan_index] * std::sin(cam_angle_max_r-tf_yaw_) - coorY_r)
+                while (std::fabs(tf_y_) - eps > scan_msg->ranges[begin_point_scan_index] * std::sin(cam_angle_max_r - tf_yaw_) - coorY_r)
                 {
                     begin_point_scan_index--;
                     cam_angle_max_r += scan_msg->angle_increment;
                 }
-                while (std::fabs(tf_y_) - eps > coorY_l - scan_msg->ranges[end_point_scan_index] * std::sin(cam_angle_max_l-tf_yaw_))
+                while (std::fabs(tf_y_) - eps > coorY_l - scan_msg->ranges[end_point_scan_index] * std::sin(cam_angle_max_l - tf_yaw_))
                 {
                     end_point_scan_index--;
                     cam_angle_max_l -= scan_msg->angle_increment;
@@ -266,12 +268,12 @@ namespace pointcloud_processing
             }
             else
             {
-                while (std::fabs(tf_y_) - eps > coorY_r - scan_msg->ranges[begin_point_scan_index] * std::sin(cam_angle_max_r-tf_yaw_))
+                while (std::fabs(tf_y_) - eps > coorY_r - scan_msg->ranges[begin_point_scan_index] * std::sin(cam_angle_max_r - tf_yaw_))
                 {
                     begin_point_scan_index++;
                     cam_angle_max_r -= scan_msg->angle_increment;
                 }
-                while (std::fabs(tf_y_) - eps > scan_msg->ranges[end_point_scan_index] * std::sin(cam_angle_max_l-tf_yaw_) - coorY_l)
+                while (std::fabs(tf_y_) - eps > scan_msg->ranges[end_point_scan_index] * std::sin(cam_angle_max_l - tf_yaw_) - coorY_l)
                 {
                     end_point_scan_index++;
                     cam_angle_max_l += scan_msg->angle_increment;

@@ -11,14 +11,14 @@ def generate_launch_description():
             package='pointcloud_processing',
             executable='pointcloud_processing_node',
             name='pointcloud_processing_node',
-            # remappings=[('/image','/camera/color/image_raw'),
-            #             ('/depth','/camera/aligned_depth_to_color/image_raw'),
-            #             ('/camera_info', '/camera/color/camera_info'),
-            #             ('/laser', '/scan')],
-            remappings=[('/image','/rgb_image_sync'),
-                        ('/depth','/estimated_depth'),
+            remappings=[('/image','/camera/color/image_raw'),
+                        ('/depth','/camera/aligned_depth_to_color/image_raw'),
                         ('/camera_info', '/camera/color/camera_info'),
                         ('/laser', '/scan')],
+            # remappings=[('/image','/rgb_image_sync'),
+            #             ('/depth','/estimated_depth'),
+            #             ('/camera_info', '/camera/color/camera_info'),
+            #             ('/laser', '/scan')],
                         
             parameters=[param_config]           
         )
