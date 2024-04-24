@@ -352,7 +352,11 @@ namespace pointcloud_processing
                 int row_offset = cam_model_.cy() - (tf_z_ - d_real * std::tan(tf_pitch_)) * cam_model_.fy() / d_real;
                 if (row_offset >= 0 && row_offset < depth_image.rows)
                 {
-                    int index_col = cam_model_.cx() - cam_model_.cx() / std::tan(cam_angle_max_l) * std::tan(angle);
+                    int index_col;
+                    if (angle>0)
+                        index_col = cam_model_.cx() - cam_model_.cx() / std::tan(cam_angle_max_l) * std::tan(angle);
+                    else
+                        index_col = cam_model_.cx() - (cam_model_.fullResolution().width- cam_model_.cx()) / std::tan(cam_angle_max_r) * std::tan(angle);
                     float d;
                     if (depth_image_msg->encoding == "32FC1")
                         d = static_cast<double>(depth_image.at<float>(row_offset, index_col));
@@ -397,7 +401,7 @@ namespace pointcloud_processing
 
         for (int i = 0; i < (int)x.size(); i++)
         {
-            if (std::abs((y[i] - x[i] * coeff_k) / x[i]) > 0.1)
+            if (std::abs((y[i] - x[i] * coeff_k) / x[i]) > 0.05)
             {
                 csv_result_file << x[i] << "\t" << y[i] << "\t" << EvalPolynomial(polynom, x[i]) << "\t" << x[i] * coeff_k << "\t ignored" << std::endl;
                 x.erase(x.begin() + i);
