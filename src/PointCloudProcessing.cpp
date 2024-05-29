@@ -347,7 +347,8 @@ namespace pointcloud_processing
             float range = scan_msg->ranges[indx];
             if (!std::isnan(range))
             {
-                if (range < 2.0) continue;
+                if (range < 2.0)
+                    continue;
                 float angle = scan_msg->angle_min + indx * scan_msg->angle_increment - tf_yaw_;
                 float d_real = range * std::cos(angle) + tf_x_;
                 int row_offset = cam_model_.cy() - (tf_z_ - d_real * std::tan(tf_pitch_)) * cam_model_.fy() / d_real;
@@ -393,12 +394,16 @@ namespace pointcloud_processing
         std::vector<double> polynom = FitPolynomial(x, y, 1);
         csv_result_file << "a:," << polynom[1] << ",b:," << polynom[0] << std::endl;
 
-        float coeff_k = sum_num / sum_den;
+        float coeff_k = 1;
+        if (sum_den != 0.0)
+            coeff_k = sum_num / sum_den;
 
         csv_result_file << "coeff k," << coeff_k << std::endl;
 
         sum_num = 0;
         sum_den = 0;
+
+        int size_proc = (int)x.size();
 
         for (int i = 0; i < (int)x.size(); i++)
         {
@@ -417,14 +422,16 @@ namespace pointcloud_processing
             }
         }
         coeff_k = sum_num / sum_den;
-        float rmse = 0, rel =0;
+        if (std::abs(coeff_k - 1) > 0.25 || (float)x.size()/((float)size_proc) < 0.3)
+            coeff_k = 1;
+        float rmse = 0, rel = 0;
         for (int i = 0; i < (int)x.size(); i++)
         {
-            rmse += (y[i]-x[i]*coeff_k)*(y[i]-x[i]*coeff_k);
-            rel += std::abs(y[i]-x[i]*coeff_k)/y[i];
+            rmse += (y[i] - x[i] * coeff_k) * (y[i] - x[i] * coeff_k);
+            rel += std::abs(y[i] - x[i] * coeff_k) / y[i];
         }
-        rmse = std::sqrt(rmse/x.size());
-        rel = rel/x.size();
+        rmse = std::sqrt(rmse / x.size());
+        rel = rel / x.size();
 
         csv_result_file << "coeff k," << coeff_k << std::endl;
         csv_result_file << "rmse," << rmse << std::endl;
@@ -437,15 +444,15 @@ namespace pointcloud_processing
             {
                 if (depth_image_msg->encoding == "32FC1")
                 {
-                    if(depth_image.at<float>(row, col)>2.0)
-                    // depth_image.at<float>(row, col) = EvalPolynomial(polynom, depth_image.at<float>(row, col));
-                    depth_image.at<float>(row, col) = depth_image.at<float>(row, col) * coeff_k;
+                    if (depth_image.at<float>(row, col) > 2.0)
+                        // depth_image.at<float>(row, col) = EvalPolynomial(polynom, depth_image.at<float>(row, col));
+                        depth_image.at<float>(row, col) = depth_image.at<float>(row, col) * coeff_k;
                 }
                 else if (depth_image_msg->encoding == "16UC1")
                 {
-                    if (depth_image.at<uint16_t>(row, col)>2000)
-                    // depth_image.at<uint16_t>(row, col) = EvalPolynomial(polynom, depth_image.at<uint16_t>(row, col));
-                    depth_image.at<uint16_t>(row, col) = depth_image.at<uint16_t>(row, col) * coeff_k;
+                    if (depth_image.at<uint16_t>(row, col) > 2000)
+                        // depth_image.at<uint16_t>(row, col) = EvalPolynomial(polynom, depth_image.at<uint16_t>(row, col));
+                        depth_image.at<uint16_t>(row, col) = depth_image.at<uint16_t>(row, col) * coeff_k;
                 }
             }
 
