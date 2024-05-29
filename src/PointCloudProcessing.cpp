@@ -340,23 +340,24 @@ namespace pointcloud_processing
         std::vector<double> x, y;
 
         std::ofstream csv_file("align_data.csv");
-        csv_file << scan_msg->ranges.size() << "\t" << depth_image.cols << std::endl;
+        csv_file << scan_msg->ranges.size() << "," << depth_image.cols << std::endl;
 
         for (int indx = 0; indx < (int)scan_msg->ranges.size(); indx++)
         {
             float range = scan_msg->ranges[indx];
             if (!std::isnan(range))
             {
+                if (range < 2.0) continue;
                 float angle = scan_msg->angle_min + indx * scan_msg->angle_increment - tf_yaw_;
                 float d_real = range * std::cos(angle) + tf_x_;
                 int row_offset = cam_model_.cy() - (tf_z_ - d_real * std::tan(tf_pitch_)) * cam_model_.fy() / d_real;
                 if (row_offset >= 0 && row_offset < depth_image.rows)
                 {
                     int index_col;
-                    if (angle>0)
+                    if (angle > 0)
                         index_col = cam_model_.cx() - cam_model_.cx() / std::tan(cam_angle_max_l) * std::tan(angle);
                     else
-                        index_col = cam_model_.cx() - (cam_model_.fullResolution().width- cam_model_.cx()) / std::tan(cam_angle_max_r) * std::tan(angle);
+                        index_col = cam_model_.cx() - (cam_model_.fullResolution().width - cam_model_.cx()) / std::tan(cam_angle_max_r) * std::tan(angle);
                     float d;
                     if (depth_image_msg->encoding == "32FC1")
                         d = static_cast<double>(depth_image.at<float>(row_offset, index_col));
@@ -380,7 +381,7 @@ namespace pointcloud_processing
                         sum_num += d * d_real;
                         sum_den += d * d;
                     }
-                    csv_file << indx << "\t" << index_col << "\t" << row_offset << "\t" << range << "\t" << d_real << "\t" << d << "\t" << d_real / d << std::endl;
+                    csv_file << indx << "," << index_col << "," << row_offset << "," << range << "," << d_real << "," << d << "," << d_real / d << std::endl;
                 }
             }
         }
@@ -390,11 +391,11 @@ namespace pointcloud_processing
         csv_result_file << "Number of input:  " << x.size() << "\n";
 
         std::vector<double> polynom = FitPolynomial(x, y, 1);
-        csv_result_file << "a:\t" << polynom[1] << "\tb:\t" << polynom[0] << std::endl;
+        csv_result_file << "a:," << polynom[1] << ",b:," << polynom[0] << std::endl;
 
         float coeff_k = sum_num / sum_den;
 
-        csv_result_file << "coeff k\t" << coeff_k << std::endl;
+        csv_result_file << "coeff k," << coeff_k << std::endl;
 
         sum_num = 0;
         sum_den = 0;
@@ -403,7 +404,7 @@ namespace pointcloud_processing
         {
             if (std::abs((y[i] - x[i] * coeff_k) / x[i]) > 0.05)
             {
-                csv_result_file << x[i] << "\t" << y[i] << "\t" << EvalPolynomial(polynom, x[i]) << "\t" << x[i] * coeff_k << "\t ignored" << std::endl;
+                csv_result_file << x[i] << "," << y[i] << "," << EvalPolynomial(polynom, x[i]) << "," << x[i] * coeff_k << ", ignored" << std::endl;
                 x.erase(x.begin() + i);
                 y.erase(y.begin() + i);
                 i--;
@@ -412,12 +413,22 @@ namespace pointcloud_processing
             {
                 sum_num += x[i] * y[i];
                 sum_den += x[i] * x[i];
-                csv_result_file << x[i] << "\t" << y[i] << "\t" << EvalPolynomial(polynom, x[i]) << "\t" << x[i] * coeff_k << std::endl;
+                csv_result_file << x[i] << "," << y[i] << "," << EvalPolynomial(polynom, x[i]) << "," << x[i] * coeff_k << std::endl;
             }
         }
         coeff_k = sum_num / sum_den;
+        float rmse = 0, rel =0;
+        for (int i = 0; i < (int)x.size(); i++)
+        {
+            rmse += (y[i]-x[i]*coeff_k)*(y[i]-x[i]*coeff_k);
+            rel += std::abs(y[i]-x[i]*coeff_k)/y[i];
+        }
+        rmse = std::sqrt(rmse/x.size());
+        rel = rel/x.size();
 
-        csv_result_file << "coeff k\t" << coeff_k << std::endl;
+        csv_result_file << "coeff k," << coeff_k << std::endl;
+        csv_result_file << "rmse," << rmse << std::endl;
+        csv_result_file << "rel," << rel << std::endl;
 
         csv_result_file.close();
 
@@ -425,10 +436,17 @@ namespace pointcloud_processing
             for (int row = 0; row < depth_image.rows; row++)
             {
                 if (depth_image_msg->encoding == "32FC1")
+                {
+                    if(depth_image.at<float>(row, col)>2.0)
                     // depth_image.at<float>(row, col) = EvalPolynomial(polynom, depth_image.at<float>(row, col));
                     depth_image.at<float>(row, col) = depth_image.at<float>(row, col) * coeff_k;
+                }
                 else if (depth_image_msg->encoding == "16UC1")
+                {
+                    if (depth_image.at<uint16_t>(row, col)>2000)
+                    // depth_image.at<uint16_t>(row, col) = EvalPolynomial(polynom, depth_image.at<uint16_t>(row, col));
                     depth_image.at<uint16_t>(row, col) = depth_image.at<uint16_t>(row, col) * coeff_k;
+                }
             }
 
         auto depth_image_msg_copy = std::make_shared<sensor_msgs::msg::Image>(*depth_image_msg);
@@ -451,7 +469,7 @@ namespace pointcloud_processing
     //         depth_image = cv::Mat(depth_image_msg->height, depth_image_msg->width, CV_16UC1, const_cast<uint16_t *>(reinterpret_cast<const uint16_t *>(&depth_image_msg->data[0])), depth_image_msg->step);
     //     float coeff = 1, coeff_last = 1;
     //     std::ofstream csv_file("scan_data.csv");
-    //     csv_file << scan_msg->ranges.size() << "\t" << depth_image.cols << std::endl;
+    //     csv_file << scan_msg->ranges.size() << "," << depth_image.cols << std::endl;
     //     for (int col = 0; col < depth_image.cols; col++)
     //     {
     //         double d;
@@ -510,7 +528,7 @@ namespace pointcloud_processing
     //         {
     //             coeff = coeff_last;
     //         }
-    //         csv_file << col << "\t" << indx << "\t" << range << "\t" << row_offset << "\t" << d_real << "\t" << d << "\t" << coeff;
+    //         csv_file << col << "," << indx << "," << range << "," << row_offset << "," << d_real << "," << d << "," << coeff;
 
     //         for (int row = 0; row < depth_image.rows; row++)
     //         {
@@ -548,7 +566,7 @@ namespace pointcloud_processing
     //     std::vector<double> x, y;
 
     //     std::ofstream csv_file("align_data.csv");
-    //     csv_file << scan_msg->ranges.size() << "\t" << depth_image.cols << std::endl;
+    //     csv_file << scan_msg->ranges.size() << "," << depth_image.cols << std::endl;
     //     for (int col = 0; col < depth_image.cols; col++)
     //     {
     //         double d;
@@ -615,7 +633,7 @@ namespace pointcloud_processing
     //         {
     //             coeff = coeff_last;
     //         }
-    //         csv_file << col << "\t" << indx << "\t" << row_offset << "\t" << range << "\t" << d_real << "\t" << d << "\t" << coeff << std::endl;
+    //         csv_file << col << "," << indx << "," << row_offset << "," << range << "," << d_real << "," << d << "," << coeff << std::endl;
     //     }
 
     //     csv_file.close();
@@ -624,11 +642,11 @@ namespace pointcloud_processing
     //     csv_result_file << "Number of input:  " << x.size() << "\n";
 
     //     std::vector<double> polynom = FitPolynomial(x, y, 1);
-    //     csv_result_file << "a:\t" << polynom[1] << "\tb:\t" << polynom[0] << std::endl;
+    //     csv_result_file << "a:," << polynom[1] << ",b:," << polynom[0] << std::endl;
 
     //     float coeff_k = sum_num / sum_den;
 
-    //     csv_result_file << "coeff k\t" << coeff_k << std::endl;
+    //     csv_result_file << "coeff k," << coeff_k << std::endl;
 
     //     sum_num = 0;
     //     sum_den = 0;
@@ -637,7 +655,7 @@ namespace pointcloud_processing
     //     {
     //         if (std::abs((y[i] - x[i] * coeff_k) / x[i]) > 0.1)
     //         {
-    //             csv_result_file << x[i] << "\t" << y[i] << "\t" << EvalPolynomial(polynom, x[i]) << "\t" << x[i] * coeff_k << "\t ignored" << std::endl;
+    //             csv_result_file << x[i] << "," << y[i] << "," << EvalPolynomial(polynom, x[i]) << "," << x[i] * coeff_k << ", ignored" << std::endl;
     //             x.erase(x.begin() + i);
     //             y.erase(y.begin() + i);
     //             i--;
@@ -646,12 +664,12 @@ namespace pointcloud_processing
     //         {
     //             sum_num += x[i] * y[i];
     //             sum_den += x[i] * x[i];
-    //             csv_result_file << x[i] << "\t" << y[i] << "\t" << EvalPolynomial(polynom, x[i]) << "\t" << x[i] * coeff_k << std::endl;
+    //             csv_result_file << x[i] << "," << y[i] << "," << EvalPolynomial(polynom, x[i]) << "," << x[i] * coeff_k << std::endl;
     //         }
     //     }
     //     coeff_k = sum_num / sum_den;
 
-    //     csv_result_file << "coeff k\t" << coeff_k << std::endl;
+    //     csv_result_file << "coeff k," << coeff_k << std::endl;
 
     //     csv_result_file.close();
 
